@@ -319,9 +319,9 @@ const T = THREE;
       float sumB = 0.0;
       float nB = 0.0;
       float maxB = 0.0;
-      for (int i = 0; i < 20; i++) {
+      for (int i = 0; i < 14; i++) {
         float pfi = float(i);
-        float prr = sqrt((pfi + 0.5) / 20.0);
+        float prr = sqrt((pfi + 0.5) / 14.0);
         float paa = pfi * 2.39996323 + pang;
         vec2 poff = vec2(cos(paa), sin(paa)) * (prr * searchR);
         float pd = unpackRGBAToDepth(texture2D(shadowMap, shadowCoord.xy + poff));
@@ -331,15 +331,15 @@ const T = THREE;
       float zb = mix(sumB / nB, maxB, 0.5);
       float fr = clamp((shadowCoord.z - zb) * pk, 0.00035, searchR);
       float lit = 0.0;
-      for (int i = 0; i < 36; i++) {
+      for (int i = 0; i < 24; i++) {
         float pfi = float(i);
-        float prr = sqrt((pfi + 0.5) / 36.0);
+        float prr = sqrt((pfi + 0.5) / 24.0);
         float paa = pfi * 2.39996323 + pang + 0.7;
         vec2 poff = vec2(cos(paa), sin(paa)) * (prr * fr);
         float pd = unpackRGBAToDepth(texture2D(shadowMap, shadowCoord.xy + poff));
         lit += step(shadowCoord.z + dot(poff, rpb), pd);
       }
-      return lit / 36.0;
+      return lit / 24.0;
     }`);
   C.shadowmap_pars_fragment = s;
 })();
@@ -350,13 +350,15 @@ let renderer, scene, camera, controls, groups = {}, opens = [], openVal = 0, ope
 /* ---------- tiện ích ảnh ---------- */
 const cv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const loadImg = src => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+/* Máy nhẹ (điện thoại, máy tính bảng): bộ nhớ ảnh giới hạn thấp → phóng ảnh vừa phải, bỏ hiệu ứng lún giấy */
+const LITE = Math.min(screen.width, screen.height) < 900 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 /* Làm sắc ảnh in sau khi phóng: ảnh + k·(ảnh − ảnh mờ) — mép nét vàng, chữ và hoa văn rõ hơn, không đổi màu */
 function sharpen(c, amount = 0.65, radius = 1.2) {
   const w = c.width, h = c.height, x = c.getContext('2d'), b = cv(w, h), bx = b.getContext('2d');
   bx.filter = `blur(${radius}px)`; bx.drawImage(c, 0, 0);
   const A = x.getImageData(0, 0, w, h), a = A.data, bb = bx.getImageData(0, 0, w, h).data;
   for (let i = 0; i < a.length; i += 4) { a[i] += amount * (a[i] - bb[i]); a[i + 1] += amount * (a[i + 1] - bb[i + 1]); a[i + 2] += amount * (a[i + 2] - bb[i + 2]); }
-  x.putImageData(A, 0, 0); return c;
+  x.putImageData(A, 0, 0); b.width = b.height = 0; return c;   // giải phóng bản mờ tạm ngay
 }
 function upscale(img, k) {
   const c = cv(Math.round(img.width * k), Math.round(img.height * k)), x = c.getContext('2d');
@@ -365,7 +367,7 @@ function upscale(img, k) {
 }
 function crop(img, r, rot = 0, inset = 3) {
   const x0 = r[0] + inset, y0 = r[1] + inset, w = r[2] - r[0] - 2 * inset, h = r[3] - r[1] - 2 * inset;
-  const sw = rot % 180 !== 0, s = Math.min(2.4, 4096 / Math.max(w, h));
+  const sw = rot % 180 !== 0, s = Math.min(LITE ? 1.5 : 2.4, (LITE ? 2048 : 4096) / Math.max(w, h));
   const cw = Math.round((sw ? h : w) * s), ch = Math.round((sw ? w : h) * s);
   const c = cv(cw, ch), x = c.getContext('2d');
   x.imageSmoothingQuality = 'high';
@@ -378,7 +380,7 @@ function prepareArt() {
   ART.gift = {}; for (const k in rg) ART.gift[k] = crop(I[g.img], g[k], rg[k]);
   const m = SPEC.matcha.art, rm = { front: 0, back: 0, left: 0, right: 0, top: 180, bottom: 0 };
   ART.matcha = {}; for (const k in rm) ART.matcha[k] = crop(I[m.img], m[k], rm[k]);
-  ART.oolongP = upscale(I.oolongP, 2); ART.oolongR = upscale(I.oolongR, 2);
+  ART.oolongP = upscale(I.oolongP, LITE ? 1.25 : 2); ART.oolongR = upscale(I.oolongR, LITE ? 1.25 : 2);
 }
 
 /* ---------- vật liệu ---------- */
@@ -422,9 +424,9 @@ const foilCache = new Map();
 function foilMask(src, mode) {
   let byMode = foilCache.get(src); if (!byMode) foilCache.set(src, byMode = {});
   if (byMode[mode]) return byMode[mode];
-  const w = src.width, h = src.height, s = Math.min(1, 3072 / Math.max(w, h)), cw = Math.round(w * s), ch = Math.round(h * s);
+  const w = src.width, h = src.height, s = Math.min(1, (LITE ? 2048 : 3072) / Math.max(w, h)), cw = Math.round(w * s), ch = Math.round(h * s);
   const a = cv(cw, ch), ax = a.getContext('2d'); ax.drawImage(src, 0, 0, cw, ch);
-  const d = ax.getImageData(0, 0, cw, ch).data;
+  const d = ax.getImageData(0, 0, cw, ch).data; a.width = a.height = 0;
   const m = new Uint8Array(cw * ch);
   for (let p = 0, i = 0; p < m.length; p++, i += 4) m[p] = d[i + 3] > 128 && goldish(d[i], d[i + 1], d[i + 2]) ? 1 : 0;
   if (mode === 'thin') {
@@ -449,7 +451,7 @@ function debossTex(mask) {
   const t = wrapTex(c, false); debossCache.set(mask, t); return t;
 }
 const DEBOSS = -0.03;   // mm — chỉ giấy quanh nét lún nhẹ; lá nhũ giữ phẳng, nhẵn
-function deboss(m, mask) { m.bumpMap = debossTex(mask); m.bumpScale = DEBOSS; m.needsUpdate = true; return m; }
+function deboss(m, mask) { if (LITE) return m; m.bumpMap = debossTex(mask); m.bumpScale = DEBOSS; m.needsUpdate = true; return m; }
 function foilMat(printTex, mask) {
   return new T.MeshStandardMaterial({ map: printTex, alphaMap: wrapTex(mask, false), transparent: true, depthWrite: false, metalness: 1, roughness: 0.22, envMapIntensity: 1.4, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
 }
@@ -759,7 +761,7 @@ function buildTag() {
    chân hộp (vải dựng lên vách) và mép nắp (vải gập vào mặt nắp, dồn về nút). Góc gấp 90° = đang gói, 0° = trải phẳng.
    Vải ở góc hộp bị dồn lại thành nếp; phần vải thừa trên nắp dồn về nút. Khi vạt đang lơ lửng, vải võng xuống theo trọng lực. */
 function buildCloth(L, W, H, off) {
-  const R = 560, N = 168, rb = 6, rt = 8, A = L / 2 + off, B = W / 2 + off, Ht = H + off, Aq = A - rb, Bq = B - rb, y0 = 0.6;
+  const R = 560, N = LITE ? 104 : 136, rb = 6, rt = 8, A = L / 2 + off, B = W / 2 + off, Ht = H + off, Aq = A - rb, Bq = B - rb, y0 = 0.6;
   const lbF = rb * Math.PI / 2, lw0 = Ht - rb - rt, ltF = rt * Math.PI / 2, H2 = Math.PI / 2;
   const sm1 = v => { v = Math.min(1, Math.max(0, v)); return v * v * (3 - 2 * v); };
   const nV = (N + 1) * (N + 1), FX = new Float32Array(nV), FZ = new Float32Array(nV), QX = new Float32Array(nV), QZ = new Float32Array(nV),
@@ -828,7 +830,7 @@ function buildCloth(L, W, H, off) {
       }
       pos[k * 3] = px; pos[k * 3 + 1] = Math.max(y0, y + y0); pos[k * 3 + 2] = pz; HW[k] = hw;
     }
-    geo.attributes.position.needsUpdate = true; geo.computeVertexNormals();
+    geo.attributes.position.needsUpdate = true; if (!geo.attributes.normal) geo.computeVertexNormals();   // dùng lại pháp tuyến khung trước: bớt 1 lần tính mỗi khung hình
     const nr = geo.attributes.normal.array;
     for (let k = 0; k < nV; k++) { const hh = HW[k]; pos[k * 3] += nr[k * 3] * hh; pos[k * 3 + 1] = Math.max(y0, pos[k * 3 + 1] + nr[k * 3 + 1] * hh); pos[k * 3 + 2] += nr[k * 3 + 2] * hh; }
     geo.computeVertexNormals(); geo.computeBoundingSphere();
@@ -971,7 +973,7 @@ function perimFn(a, b, r) {
   return { f, P, seg: [Lf + q, Lr + q, Lf + q, Lr + q] };
 }
 function atlas(list, seg, P, Hmm, bg) {
-  const k = Math.min(8.4, Math.min(8192, renderer.capabilities.maxTextureSize) / P), c = cv(Math.round(P * k), Math.round(Hmm * k)), x = c.getContext('2d');
+  const k = Math.min(8.4, Math.min(LITE ? 4096 : 8192, renderer.capabilities.maxTextureSize) / P), c = cv(Math.round(P * k), Math.round(Hmm * k)), x = c.getContext('2d');
   x.imageSmoothingQuality = 'high';
   if (bg) { x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); }
   let s = 0; list.forEach((im, i) => { x.drawImage(im, s * k, 0, seg[i] * k + 1, c.height); s += seg[i]; });
@@ -1493,7 +1495,7 @@ function sweep() {
 
 function init() {
   renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, LITE ? 1.25 : 1.5));
   renderer.outputEncoding = T.sRGBEncoding;
   renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.72;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFShadowMap;
@@ -1583,7 +1585,21 @@ function layoutDisplay() {
   G.matcha.userData.setOpen(cl(ST.m - 1)); G.tinR.userData.setOpen(cl(ST.t - 1)); G.tinP.userData.setOpen(0);
   Object.values(G).forEach(gr => { gr.visible = true; });
 }
+const PERF = { acc: 0, n: 0, last: 0 };
+function perfTick() {
+  const now = performance.now(), dt = now - (PERF.last || now); PERF.last = now;
+  if (!dt || dt > 250) return;                       // bỏ qua lúc tab bị ẩn
+  PERF.acc += dt; PERF.n++; if (PERF.n < 45) return;
+  const avg = PERF.acc / PERF.n, max = Math.min(window.devicePixelRatio || 1, LITE ? 1.5 : 2), min = LITE ? 0.85 : 1;
+  PERF.acc = 0; PERF.n = 0;
+  let pr = renderer.getPixelRatio();
+  if (avg > 26 && pr > min) pr = Math.max(min, pr - 0.25);          // chậm: hạ độ phân giải
+  else if (avg < 15 && pr < max) pr = Math.min(max, pr + 0.125);    // nhanh: nâng lên cho nét
+  else return;
+  renderer.setPixelRatio(pr); renderer.setSize(innerWidth, innerHeight); applyViewOffset();
+}
 function storyTick() {
+  perfTick();
   const now = performance.now(), dt = Math.min(0.06, (now - (storyTick.lt || now)) / 1000); storyTick.lt = now;
   if (focus !== 'display') return;
   let moved = false;
@@ -1698,7 +1714,7 @@ function applyLight() {
     l.color.copy(col); l.intensity = d.i * mul; l.position.set(...(turn ? rotY(d.p, S.az) : d.p));
     if ('angle' in d) { l.angle = d.angle; l.penumbra = d.pen; }
     l.castShadow = !!d.s && l.intensity > 0.01;
-    if (d.s) l.shadow.radius = 1000 + pcssK(l, d.s);
+    if (d.s) l.shadow.radius = LITE ? 3 : 1000 + pcssK(l, d.s);   // máy nhẹ: bóng mềm đơn giản, nhanh hơn
   };
   set(LT.key, P.key, S.k, true); set(LT.spot, P.spot, S.k, true);
   set(LT.fill, P.fill, S.f, false); set(LT.rim, P.rim, S.r, false);
