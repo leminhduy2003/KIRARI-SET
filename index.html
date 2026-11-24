@@ -135,6 +135,8 @@ html,body{background:#e8d8bb;color:var(--st-ink)}
 @keyframes ldStar{0%,100%{transform:scale(.6);opacity:.4}50%{transform:scale(1);opacity:.9}}
 @keyframes ldBar{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
 @media (prefers-reduced-motion:reduce){.ld-flower,.ld-petals circle,.ld-star,.ld-bar i{animation:none}.ld-petals circle{stroke-dashoffset:0}}
+.ld-err{max-width:min(420px,86vw);text-align:center;font-size:14px;line-height:1.55;color:var(--st-ink)}
+.ld-err small{display:block;margin-top:10px;font-size:11px;color:var(--st-muted);word-break:break-word}
 /* Nhịp mềm: cảnh hiện dần, thẻ chữ mờ ra rồi hiện lại từng dòng, mọi chuyển trạng thái đều chậm và êm */
 #stage{opacity:0;transition:opacity 1.8s ease}
 body.story #stage{opacity:1}
@@ -177,6 +179,21 @@ body.story #stage{opacity:1}
 @media (prefers-reduced-motion:reduce){.st-card,.st-card.in > *,#stage,#loading{transition:none;animation:none}}
 </style>
 <div id="stage"></div>
+<script>
+(function () {
+  function show(msg) {
+    var L = document.getElementById('loading');
+    if (!L) { L = document.createElement('div'); L.id = 'loading'; document.body.appendChild(L); }
+    L.style.opacity = 1; L.style.pointerEvents = 'auto';
+    L.innerHTML = '<div class="ld-name">KIRARI</div><div class="ld-err">Máy này chưa mở được bản 3D.<br>Hãy chụp màn hình này gửi lại.<small></small></div>';
+    L.querySelector('small').textContent = String(msg).slice(0, 300) + ' · ' + navigator.userAgent.slice(0, 160);
+  }
+  window.__kErr = show;
+  window.addEventListener('error', function (e) { show((e.message || 'Lỗi') + (e.lineno ? ' (dòng ' + e.lineno + ')' : '')); });
+  window.addEventListener('unhandledrejection', function (e) { show(e.reason && e.reason.message ? e.reason.message : e.reason); });
+  try { var c = document.createElement('canvas'); if (!(c.getContext('webgl2') || c.getContext('webgl'))) show('Trình duyệt không hỗ trợ WebGL (đồ hoạ 3D)'); } catch (e) { show(e.message); }
+})();
+</script>
 <div class="st-brand" aria-hidden="true"><span class="st-mark">KIRARI</span><span class="st-sub">Set quà trà</span></div>
 <nav class="st-rail" id="stRail" aria-label="Các chương"></nav>
 <section class="st-card" id="stCard" aria-live="polite">
@@ -354,6 +371,7 @@ const loadImg = src => new Promise((res, rej) => { const im = new Image(); im.on
 const LITE = Math.min(screen.width, screen.height) < 900 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 /* Làm sắc ảnh in sau khi phóng: ảnh + k·(ảnh − ảnh mờ) — mép nét vàng, chữ và hoa văn rõ hơn, không đổi màu */
 function sharpen(c, amount = 0.65, radius = 1.2) {
+  if (LITE) return c;
   const w = c.width, h = c.height, x = c.getContext('2d'), b = cv(w, h), bx = b.getContext('2d');
   bx.filter = `blur(${radius}px)`; bx.drawImage(c, 0, 0);
   const A = x.getImageData(0, 0, w, h), a = A.data, bb = bx.getImageData(0, 0, w, h).data;
@@ -367,7 +385,7 @@ function upscale(img, k) {
 }
 function crop(img, r, rot = 0, inset = 3) {
   const x0 = r[0] + inset, y0 = r[1] + inset, w = r[2] - r[0] - 2 * inset, h = r[3] - r[1] - 2 * inset;
-  const sw = rot % 180 !== 0, s = Math.min(LITE ? 1.5 : 2.4, (LITE ? 2048 : 4096) / Math.max(w, h));
+  const sw = rot % 180 !== 0, s = Math.min(LITE ? 1 : 2.4, (LITE ? 1536 : 4096) / Math.max(w, h));
   const cw = Math.round((sw ? h : w) * s), ch = Math.round((sw ? w : h) * s);
   const c = cv(cw, ch), x = c.getContext('2d');
   x.imageSmoothingQuality = 'high';
@@ -380,7 +398,7 @@ function prepareArt() {
   ART.gift = {}; for (const k in rg) ART.gift[k] = crop(I[g.img], g[k], rg[k]);
   const m = SPEC.matcha.art, rm = { front: 0, back: 0, left: 0, right: 0, top: 180, bottom: 0 };
   ART.matcha = {}; for (const k in rm) ART.matcha[k] = crop(I[m.img], m[k], rm[k]);
-  ART.oolongP = upscale(I.oolongP, LITE ? 1.25 : 2); ART.oolongR = upscale(I.oolongR, LITE ? 1.25 : 2);
+  ART.oolongP = LITE ? I.oolongP : upscale(I.oolongP, 2); ART.oolongR = LITE ? I.oolongR : upscale(I.oolongR, 2);
 }
 
 /* ---------- vật liệu ---------- */
@@ -424,7 +442,7 @@ const foilCache = new Map();
 function foilMask(src, mode) {
   let byMode = foilCache.get(src); if (!byMode) foilCache.set(src, byMode = {});
   if (byMode[mode]) return byMode[mode];
-  const w = src.width, h = src.height, s = Math.min(1, (LITE ? 2048 : 3072) / Math.max(w, h)), cw = Math.round(w * s), ch = Math.round(h * s);
+  const w = src.width, h = src.height, s = Math.min(1, (LITE ? 1536 : 3072) / Math.max(w, h)), cw = Math.round(w * s), ch = Math.round(h * s);
   const a = cv(cw, ch), ax = a.getContext('2d'); ax.drawImage(src, 0, 0, cw, ch);
   const d = ax.getImageData(0, 0, cw, ch).data; a.width = a.height = 0;
   const m = new Uint8Array(cw * ch);
@@ -761,7 +779,7 @@ function buildTag() {
    chân hộp (vải dựng lên vách) và mép nắp (vải gập vào mặt nắp, dồn về nút). Góc gấp 90° = đang gói, 0° = trải phẳng.
    Vải ở góc hộp bị dồn lại thành nếp; phần vải thừa trên nắp dồn về nút. Khi vạt đang lơ lửng, vải võng xuống theo trọng lực. */
 function buildCloth(L, W, H, off) {
-  const R = 560, N = LITE ? 104 : 136, rb = 6, rt = 8, A = L / 2 + off, B = W / 2 + off, Ht = H + off, Aq = A - rb, Bq = B - rb, y0 = 0.6;
+  const R = 560, N = LITE ? 88 : 136, rb = 6, rt = 8, A = L / 2 + off, B = W / 2 + off, Ht = H + off, Aq = A - rb, Bq = B - rb, y0 = 0.6;
   const lbF = rb * Math.PI / 2, lw0 = Ht - rb - rt, ltF = rt * Math.PI / 2, H2 = Math.PI / 2;
   const sm1 = v => { v = Math.min(1, Math.max(0, v)); return v * v * (3 - 2 * v); };
   const nV = (N + 1) * (N + 1), FX = new Float32Array(nV), FZ = new Float32Array(nV), QX = new Float32Array(nV), QZ = new Float32Array(nV),
@@ -973,7 +991,7 @@ function perimFn(a, b, r) {
   return { f, P, seg: [Lf + q, Lr + q, Lf + q, Lr + q] };
 }
 function atlas(list, seg, P, Hmm, bg) {
-  const k = Math.min(8.4, Math.min(LITE ? 4096 : 8192, renderer.capabilities.maxTextureSize) / P), c = cv(Math.round(P * k), Math.round(Hmm * k)), x = c.getContext('2d');
+  const k = Math.min(8.4, Math.min(LITE ? 3072 : 8192, renderer.capabilities.maxTextureSize) / P), c = cv(Math.round(P * k), Math.round(Hmm * k)), x = c.getContext('2d');
   x.imageSmoothingQuality = 'high';
   if (bg) { x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); }
   let s = 0; list.forEach((im, i) => { x.drawImage(im, s * k, 0, seg[i] * k + 1, c.height); s += seg[i]; });
@@ -1500,6 +1518,7 @@ function init() {
   renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.72;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFShadowMap;
   $('#stage').appendChild(renderer.domElement);
+  renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); window.__kErr && __kErr('Máy hết bộ nhớ đồ hoạ (WebGL context lost). Đóng bớt ứng dụng/tab rồi tải lại trang.'); });
   scene = new T.Scene(); scene.background = lin('#e8d8bb');
   scene.environment = studioEnv();
   camera = new T.PerspectiveCamera(22, 1, 10, 20000);
@@ -1695,7 +1714,7 @@ function initLights() {
   LT.key = dir(2048); LT.fill = dir(1024);
   LT.rim = new T.DirectionalLight(0xffffff, 0); scene.add(LT.rim);
   LT.spot = new T.SpotLight(0xffffff, 0, 0, 0.6, 1, 1); LT.spot.castShadow = true;
-  LT.spot.shadow.mapSize.set(Math.min(innerWidth, innerHeight) < 700 ? 2048 : 4096, Math.min(innerWidth, innerHeight) < 700 ? 2048 : 4096); LT.spot.shadow.bias = -0.00003; LT.spot.shadow.normalBias = 0.35;
+  LT.spot.shadow.mapSize.set(LITE ? 1024 : 4096, LITE ? 1024 : 4096); LT.spot.shadow.bias = -0.00003; LT.spot.shadow.normalBias = 0.35;
   LT.spot.shadow.camera.near = 400; LT.spot.shadow.camera.far = 3500; scene.add(LT.spot);
   // ánh hắt từ sàn kem lên mặt dưới/vách bên của vật
   LT.hemi = new T.HemisphereLight(0xffffff, 0xd9c29c, 0); scene.add(LT.hemi);
@@ -1929,7 +1948,7 @@ Promise.all(Object.entries(IMG).map(([k, s]) => loadImg(s).then(im => { I[k] = i
   .then(() => Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2000))]))
   .then(() => { const m = document.getElementById('ldMsg'); if (m) m.textContent = 'Đang dựng studio 3D…'; return new Promise(r => requestAnimationFrame(() => setTimeout(r, 40))); })
   .then(() => { prepareArt(); init(); wire(); wireLights(); setFocus('all', true); goCam('hero', true); try { renderer.compile(scene, camera); } catch (e) { } { const L = $('#loading'); L.style.opacity = 0; L.style.pointerEvents = 'none'; setTimeout(() => L.remove(), 1500); } storyStart(); })
-  .catch(err => { $('#loading').textContent = 'Không dựng được preview: ' + err; console.error(err); });
+  .catch(err => { console.error(err); window.__kErr && __kErr(err && err.message ? err.message : err); });
 </script>
 
 
